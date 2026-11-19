@@ -1,8 +1,7 @@
 import json
 
 from openai_client import client
-from agent.tool_registry import tools
-from tools.github import get_repository_info
+from agent.tool_registry import tools, tool_functions
 
 
 def run_agent(user_input):
@@ -19,13 +18,12 @@ def run_agent(user_input):
         for item in response.output:
 
             if item.type == 'function_call':
+                function = tool_functions.get(item.name)
 
-                if item.name == 'get_repository_info':
+                if function:
                     arguments = json.loads(item.arguments)
 
-                    result = get_repository_info(
-                        arguments['repo_name']
-                    )
+                    result = function(**arguments)
 
                     tool_outputs.append({
                         'type': 'function_call_output',

@@ -1,3 +1,5 @@
+from tools.github import get_repository_info
+
 tools = [
     {
         'type': 'function',
@@ -17,3 +19,7 @@ tools = [
         'strict': True
     }
 ]
+
+tool_functions = {
+    'get_repository_info': get_repository_info
+}
