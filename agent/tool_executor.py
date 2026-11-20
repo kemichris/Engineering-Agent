@@ -1,6 +1,6 @@
 import json
 
-from agent.tool_registry import tool_functions
+from agent.tool_registry import tool_functions, GetRepositoryInfoArgs
 
 # Handles tool execution
 def execute_tool(item):
@@ -13,7 +13,8 @@ def execute_tool(item):
     else:
         try:
             arguments = json.loads(item.arguments)
-            result = function(**arguments)
+            validated_args = GetRepositoryInfoArgs.model_validate(arguments).model_dump()
+            result = function(**validated_args)
 
             output = result
 

@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from tools.github import get_repository_info
 
 tools = [
@@ -20,8 +21,12 @@ tools = [
     }
 ]
 
+class GetRepositoryInfoArgs(BaseModel):
+    repo_name: str
 
 # Resolves available functions
 tool_functions = {
     'get_repository_info': get_repository_info
 }
+
+
