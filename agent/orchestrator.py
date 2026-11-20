@@ -6,9 +6,9 @@ from agent.tool_registry import tools, tool_functions
 
 def run_agent(user_input):
     response = client.responses.create(
-        model='gpt-5.4-mini',
-        tools=tools,
-        tool_choice='auto',
+        model="gpt-5.4-mini", 
+        tools=tools, 
+        tool_choice="auto", 
         input=user_input
     )
 
@@ -17,25 +17,36 @@ def run_agent(user_input):
 
         for item in response.output:
 
-            if item.type == 'function_call':
+            if item.type == "function_call":
                 function = tool_functions.get(item.name)
 
-                if function:
-                    arguments = json.loads(item.arguments)
+                if function is None:
+                    output = {"error": f"Tool {item.name} is not registered."}
 
-                    result = function(**arguments)
+                else:
+                    try:
+                        arguments = json.loads(item.arguments)
 
-                    tool_outputs.append({
-                        'type': 'function_call_output',
-                        'call_id': item.call_id,
-                        'output': json.dumps(result)
-                    })
+                        result = function(**arguments)
+
+                        output = result
+
+                    except Exception as error:
+                        output = {"error": str(error)}
+
+                tool_outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": item.call_id,
+                        "output": json.dumps(output),
+                    }
+                )
 
         if not tool_outputs:
             return response.output_text
 
         response = client.responses.create(
-            model='gpt-5.4-mini',
-            previous_response_id=response.id,
+            model="gpt-5.4-mini", 
+            previous_response_id=response.id, 
             input=tool_outputs
         )
