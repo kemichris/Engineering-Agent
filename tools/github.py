@@ -7,6 +7,7 @@ repositories = {
     }
 }
 
+# Executes GitHub operations
 def get_repository_info(repo_name):
     if repo_name in repositories:
         return repositories[repo_name]

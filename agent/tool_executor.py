@@ -2,7 +2,7 @@ import json
 
 from agent.tool_registry import tool_functions
 
-
+# Handles tool execution
 def execute_tool(item):
     function = tool_functions.get(item.name)
 

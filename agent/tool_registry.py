@@ -20,6 +20,8 @@ tools = [
     }
 ]
 
+
+# Resolves available functions
 tool_functions = {
     'get_repository_info': get_repository_info
 }
