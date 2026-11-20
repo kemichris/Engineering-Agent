@@ -29,4 +29,6 @@ tool_functions = {
     'get_repository_info': get_repository_info
 }
 
-
+tool_schemas = {
+    'get_repository_info': GetRepositoryInfoArgs
+}
