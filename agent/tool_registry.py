@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
 from tools.github import get_repository_info
 
 tools = [
@@ -24,6 +25,12 @@ tools = [
 class GetRepositoryInfoArgs(BaseModel):
     repo_name: str
 
+class GetRepositoryIssuesArgs(BaseModel):
+    repo_name: str
+    state: Literal['open', 'closed', 'all'] = 'open'
+    per_page: int = Field(default=10, ge=1, le=100)
+    page: int = Field(default=1, ge=1)
+
 # Resolves available functions
 tool_functions = {
     'get_repository_info': get_repository_info
@@ -32,3 +39,4 @@ tool_functions = {
 tool_schemas = {
     'get_repository_info': GetRepositoryInfoArgs
 }
+
