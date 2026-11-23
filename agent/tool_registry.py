@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Literal
 
-from tools.github import get_repository_info, get_repository_issues
+from tools.github import get_repository_info, get_repository_issues, get_issue_details
 
 
 tools = [
@@ -51,7 +51,29 @@ tools = [
             'additionalProperties': False
         },
         'strict': False
-    }
+    },
+     {
+            'type': 'function',
+            'name': 'get_issue_details',
+            'description': 'Retrieves the full details of the specific issue using its issue number.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'repo_name': {
+                        'type': 'string',
+                        'description': 'Repository name in owner/name format.'
+                    },
+                    'issue_number': {
+                        'type': 'integer',
+                        'description': 'Issue number to retrieve.'
+                    }
+                },
+                'required': ['repo_name', 'issue_number'],
+                'additionalProperties': False
+            },
+            'strict': False
+        }
+    
 ]
 
 
@@ -65,16 +87,22 @@ class GetRepositoryIssuesArgs(BaseModel):
     per_page: int = Field(default=10, ge=1, le=100)
     page: int = Field(default=1, ge=1)
 
+class GetIssueDetailsArgs(BaseModel):
+    repo_name: str
+    issue_number: int = Field(ge=1)
 
 # Resolves available functions
 tool_functions = {
     'get_repository_info': get_repository_info,
-    'get_repository_issues': get_repository_issues
+    'get_repository_issues': get_repository_issues,
+    'get_issue_details': get_issue_details
 }
 
 
 # Resolves validation schemas
 tool_schemas = {
     'get_repository_info': GetRepositoryInfoArgs,
-    'get_repository_issues': GetRepositoryIssuesArgs
+    'get_repository_issues': GetRepositoryIssuesArgs,
+    'get_issue_details': GetIssueDetailsArgs
+    
 }
