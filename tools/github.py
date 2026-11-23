@@ -110,7 +110,6 @@ def get_repository_issues(repo_name, state='open', per_page=10, page=1):
         return {'error': 'GitHub returned an invalid JSON response.'}
 
 
-
 def get_issue_details(repo_name, issue_number):
     url = f'https://api.github.com/repos/{repo_name}/issues/{issue_number}'
 
@@ -157,7 +156,43 @@ def get_issue_details(repo_name, issue_number):
         return {'error': 'GitHub returned an invalid JSON response.'}
 
 
-if __name__ == '__main__':
-    result = get_issue_details('facebook/react', 38183)
+def get_issue_comments(repo_name, issue_number):
+    url = f'https://api.github.com/repos/{repo_name}/issues/{issue_number}/comments'
+    comments = []
 
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+
+        data = response.json()
+
+        for comment in data:
+            comments.append({
+                'comment_id': comment.get('id'),
+                'author': comment.get('user', {}).get('login'),
+                'body': comment.get('body'),
+                'creation_date': comment.get('created_at'),
+                'updated_date': comment.get('updated_at'),
+                'url': comment.get('html_url')
+            })
+
+        return comments
+
+    except requests.exceptions.HTTPError as error:
+        if response.status_code == 404:
+            return {'error': 'Repository or issue not found.'}
+
+        return {'error': f'GitHub API returned an HTTP error: {error}'}
+
+    except requests.exceptions.Timeout:
+        return {'error': 'GitHub API request timed out.'}
+
+    except requests.exceptions.RequestException as error:
+        return {'error': f'GitHub API request failed: {error}'}
+
+    except ValueError:
+        return {'error': 'GitHub returned an invalid JSON response.'}
+
+if __name__ == '__main__':
+    result = get_issue_comments('facebook/react', 38183)
     print(result)
