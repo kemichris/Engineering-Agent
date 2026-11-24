@@ -1,47 +1,79 @@
 # Engineering Research & Workflow Agent
 
-An AI-powered engineering research agent that investigates GitHub
-repositories and issues using real GitHub data. The project is being
-built incrementally in Python with the OpenAI Responses API, function
-calling, Pydantic validation, and the GitHub REST API.
+An AI-powered engineering research and workflow agent that investigates
+GitHub repositories and issues using real GitHub data. The project is
+being built incrementally in Python with the OpenAI Responses API,
+function calling, Pydantic validation, and the GitHub REST API.
 
-> **Project status:** Working prototype / pre-MVP. The core read-only
-> GitHub research workflow is implemented and tested locally. It is not
-> yet production-ready or deployed.
+> **Project status:** Working local prototype / pre-MVP. The agent can
+> plan and execute multi-step GitHub research workflows, track task
+> dependencies and outcomes, and produce investigation reports. It is
+> not yet production-ready or deployed.
 
 ## 1. Project vision
 
 The goal is to build an agent that can investigate engineering work
 rather than simply answer questions. Given a request, it should
-understand the objective, gather relevant repository data, inspect
-selected issues and discussions, reason over the evidence, prepare
-recommendations, and eventually carry out approved workflow actions.
+understand the objective, break it into tasks, gather relevant
+repository data, inspect selected issues and discussions, reason over
+the evidence, prepare recommendations, and eventually carry out approved
+workflow actions.
 
-The initial focus is GitHub repository and issue investigation. The
-longer-term system will support planning, multi-step execution,
-persistent task state, human approval, and reliable reporting.
+The initial focus is read-only GitHub repository and issue
+investigation. The longer-term system will support persistent workflows,
+stronger completion validation, human approval, and reliable
+evidence-backed reporting.
 
 ## 2. Current capabilities
 
-The following capabilities have been implemented and tested locally:
+The following capabilities have been implemented and exercised locally.
+
+### Model and tool infrastructure
 
 -   OpenAI Responses API connection using the Python SDK.
--   Dynamic tool selection and dispatch through a registry.
+-   Dynamic tool selection and dispatch through a central registry.
 -   Local execution of model-requested function calls.
--   Pydantic validation of tool arguments.
+-   Pydantic validation of model-generated tool arguments.
+-   Separation between tool definitions, schemas, function mappings, and
+    execution.
+-   A reusable model/tool-calling loop that can execute multiple tool
+    calls.
+-   Tool execution metadata captured separately from the
+    OpenAI-compatible function-call output.
+
+### GitHub integration
+
 -   Real GitHub REST API integration.
 -   Repository metadata retrieval.
 -   Issue listing with state filtering and pagination.
--   Filtering pull requests out of issue results (GitHub's Issues
-    endpoints can return both issues and pull requests).
--   Retrieval of full details for a specific issue.
--   Retrieval of issue comments.
--   Multi-step tool use: retrieve a list of issues, select one, fetch
-    its details, and combine the results.
--   Error responses for common HTTP, timeout, request, and JSON parsing
-    failures.
+-   Pull requests filtered out of issue results.
+-   Full details retrieval for a specific issue.
+-   Issue comment retrieval.
+-   HTTP, timeout, request, and JSON error handling in GitHub functions.
 
-### Current GitHub tools
+### Planning and workflow orchestration
+
+-   A Planner that converts a natural-language objective into a
+    structured task plan.
+-   Tool-independent task planning: the Planner describes work and
+    dependencies without hardcoding tool names.
+-   Structured task descriptions and completion criteria.
+-   Task dependencies represented through `depends_on`.
+-   Plan validation for unique task IDs, unknown dependencies,
+    self-dependencies, and circular dependencies.
+-   A Task Manager that selects eligible tasks and tracks task state,
+    results, errors, and progress.
+-   Task states for pending, processing, completed, failed, and blocked
+    work.
+-   A high-level Orchestrator that coordinates planning, task execution,
+    dependency-result handoff, and final workflow reporting.
+-   Failed prerequisites prevent dependent tasks from running; dependent
+    tasks are reported as blocked.
+-   Tool failures are captured as execution metadata and can cause the
+    current task to fail instead of silently treating an error response
+    as successful work.
+
+## 3. GitHub tools
 
   -----------------------------------------------------------------------
   Tool                                Responsibility
@@ -51,257 +83,364 @@ The following capabilities have been implemented and tested locally:
                                       forks, and open issue count.
 
   `get_repository_issues`             Retrieves issue summaries with
-                                      state filtering and pagination.
-                                      Pull requests are excluded from the
-                                      returned issue list.
+                                      state filtering and pagination,
+                                      excluding pull requests.
 
   `get_issue_details`                 Retrieves the full description and
-                                      metadata for one issue.
+                                      metadata for one issue, including
+                                      labels and timestamps.
 
   `get_issue_comments`                Retrieves comments for one issue,
                                       including author, body, dates, and
                                       URL.
   -----------------------------------------------------------------------
 
-## 3. Example workflow already demonstrated
-
-User request:
-
-> Find 5 open issues from `facebook/react` and give me the details of
-> the first issue.
-
-The agent successfully: 1. Interpreted the request. 2. Called
-`get_repository_issues`. 3. Received a list of issue summaries. 4.
-Selected the first issue from the results. 5. Called `get_issue_details`
-with the selected issue number. 6. Combined the results into one
-response.
-
-A second test asked the agent to investigate issue `38183` in
-`facebook/react`, retrieve its full details, read its comments, and
-explain the reported problem and suggested solutions. The agent
-successfully coordinated the issue-details and comments tools and
-produced a consolidated investigation report.
-
-These are local prototype tests, not a claim of production reliability.
-
 ## 4. Current architecture
 
+The implementation has two coordination levels:
+
+-   **High-level workflow orchestration:** plans the work, tracks task
+    dependencies and state, and decides which task can run next.
+-   **Low-level tool-calling loop:** lets the model request registered
+    tools, executes those functions locally, and returns their outputs
+    to the model.
+
 ``` text
-User
- |
- v
-main.py
- |
- v
-agent/orchestrator.py
- |                  \
- |                   \---- OpenAI Responses API
- |                               |
- |                         Tool call request
- |                               |
- v                               v
-agent/tool_executor.py <--- agent/tool_registry.py
- |                               |
- |                         Tool definitions
- |                         Function mapping
- |                         Pydantic schemas
- v
-tools/github.py
- |
- v
+User request
+    |
+    v
+Planner
+    |
+    v
+Plan + Task Manager
+    |
+    v
+High-level Orchestrator
+    |
+    +---- selects eligible task
+    |
+    v
+Task execution / model
+    |
+    v
+Reusable tool-calling loop
+    |
+    +---- OpenAI Responses API
+    |
+    v
+Tool Executor <---- Tool Registry
+    |
+    v
+GitHub tools
+    |
+    v
 GitHub REST API
- |
- v
-Tool result returned to OpenAI
- |
- v
-Final response to user
+    |
+    v
+Tool results + execution metadata
+    |
+    v
+Task state update
+    |
+    v
+Next eligible task / final report
 ```
 
 ### Component responsibilities
 
--   **`main.py`** --- local command-line entry point; collects user
-    input and prints the agent response.
+-   **`main.py`** --- local command-line entry point.
 -   **`openai_client.py`** --- loads environment variables and
     initializes the OpenAI client.
--   **`agent/orchestrator.py`** --- sends user input to the model,
-    detects function calls, coordinates tool execution, sends tool
-    outputs back, and continues until the model returns a final
-    response.
--   **`agent/tool_registry.py`** --- defines the tools exposed to the
-    model, maps tool names to Python functions, and maps tool names to
-    Pydantic argument schemas.
--   **`agent/tool_executor.py`** --- parses tool arguments, validates
-    them, executes the matching function, and packages the result as a
-    function-call output.
+-   **`agent/planner.py`** --- converts the user's objective into a
+    structured plan with task descriptions, dependencies, and completion
+    criteria.
+-   **`agent/task_manager.py`** --- defines task and plan models,
+    validates dependency graphs, tracks lifecycle state, selects
+    eligible tasks, and reports progress.
+-   **`agent/orchestrator.py`** --- coordinates the complete workflow,
+    passes dependency results into later tasks, runs the tool loop, and
+    updates task outcomes.
+-   **`agent/tool_registry.py`** --- defines available tools, OpenAI
+    function schemas, Pydantic argument schemas, and Python function
+    mappings.
+-   **`agent/tool_executor.py`** --- parses and validates tool
+    arguments, executes the selected function, and returns both the
+    tool-call output and local execution metadata.
 -   **`tools/github.py`** --- contains GitHub API integration functions
-    and their HTTP/JSON error handling.
+    and their HTTP/JSON handling.
 
 ### Current project structure
 
 ``` text
-engineering-agent/
+Engineering-Agent/
 ├── .env
 ├── .gitignore
 ├── main.py
 ├── openai_client.py
 ├── agent/
 │   ├── __init__.py
+│   ├── planner.py
+│   ├── task_manager.py
+│   ├── orchestrator.py
 │   ├── tool_registry.py
-│   ├── tool_executor.py
-│   └── orchestrator.py
+│   └── tool_executor.py
 └── tools/
     ├── __init__.py
     └── github.py
 ```
 
-This is the structure established in the current implementation. New
-modules should be introduced when a capability needs them, rather than
-creating empty architecture files prematurely.
+This reflects the current implementation discussed and tested. Update
+the structure as modules are added or responsibilities change.
 
-## 5. How tool calling works
+## 5. How the workflow works
 
-1.  The user submits a request.
-2.  The orchestrator sends the request and available tool definitions to
-    the model.
-3.  The model may return a function-call request.
-4.  The executor looks up the requested function and its Pydantic
-    schema.
-5.  The executor parses and validates the arguments.
-6.  The local Python function calls the GitHub API.
-7.  The executor sends the tool result back to the model using the
-    matching `call_id`.
-8.  The model may request another tool or produce a final answer.
+1.  The user submits an engineering research objective.
+2.  The Planner creates a structured plan with task descriptions,
+    completion criteria, and dependencies.
+3.  Pydantic validates the plan, including unique task IDs and a valid
+    acyclic dependency graph.
+4.  The Task Manager identifies a pending task whose prerequisites have
+    completed.
+5.  The Orchestrator marks the task as processing and passes the outputs
+    of its dependencies into the task context.
+6.  The model can request registered GitHub tools through the reusable
+    tool-calling loop.
+7.  The Tool Executor validates arguments, invokes the Python function,
+    and records whether the tool execution succeeded.
+8.  The Orchestrator uses execution outcomes to update the task state.
+9.  Failed tasks prevent dependent tasks from executing; those dependent
+    tasks are marked blocked.
+10. The workflow reports task progress and returns the final report when
+    the plan succeeds, or an incomplete-workflow result when it does
+    not.
 
-The model chooses and requests tools; the application executes the
-Python functions. The model does not directly execute local Python code.
+The model requests tools; the application executes the Python functions.
+The model does not directly execute local Python code.
 
-## 6. Milestones
+## 6. Work completed and tested so far
 
-### Completed
+### A. GitHub research tools
 
-  Milestone                                Result
-  ---------------------------------------- ------------------------
-  Python project and virtual environment   Created
-  OpenAI API connection                    Working
-  First function-calling agent             Working
-  Dynamic tool registry and dispatch       Implemented
-  Tool executor separation                 Implemented
-  Pydantic argument validation             Implemented
-  Real GitHub repository lookup            Implemented
-  GitHub issue listing and filtering       Implemented
-  Issue pagination                         Implemented and tested
-  Full issue detail retrieval              Implemented and tested
-  Issue comment retrieval                  Implemented and tested
-  Multi-step tool workflow                 Demonstrated locally
+The agent has successfully:
 
-### Planned
+-   Retrieved repository metadata.
+-   Retrieved issue lists from `facebook/react`.
+-   Paginated issue results and excluded pull requests.
+-   Retrieved full details for a selected issue.
+-   Retrieved comments for an issue.
+-   Coordinated multiple tools in one investigation, allowing the model
+    to select a relevant issue and then request its details and
+    discussion.
+
+One demonstrated investigation used issue `38183` in `facebook/react`
+and retrieved its details and comments.
+
+### B. Planner and Task Manager
+
+The project now has a separate planning and task-state layer.
+
+Implemented:
+
+-   Structured `Plan`, `Task`, `PlanDraft`, and `TaskDraft` models.
+-   Planner-generated task IDs, descriptions, dependencies, and
+    completion criteria.
+-   Dependency validation, including duplicate IDs, missing dependency
+    IDs, self-dependencies, and cycles.
+-   Eligible-task selection based on prerequisite completion.
+-   Task lifecycle and progress tracking.
+-   Failed and blocked task reporting.
+
+The Planner was tested independently with:
+
+``` bash
+python3 -m agent.planner
+```
+
+### C. High-level Orchestrator
+
+The Orchestrator has been tested with a multi-task GitHub investigation.
+A successful run generated a plan, retrieved five recent open issues,
+analyzed them, and produced a report that referenced issue numbers such
+as `#38359`, `#38351`, `#38335`, `#38367`, and `#38345`.
+
+The exact issue set is time-dependent; these issue numbers describe one
+observed run, not a permanent expected result.
+
+The workflow also demonstrated that a plan can be generated with three
+dependent tasks and that task outputs can be passed to subsequent tasks.
+
+### D. Failure propagation test
+
+A GitHub API rate-limit response was encountered during an orchestrator
+run. The workflow reported:
+
+-   Task 1: failed.
+-   Tasks 2--4: blocked.
+-   Completed tasks: 0.
+-   Failed tasks: 1.
+-   Blocked tasks: 3.
+
+This is an important reliability improvement: the application surfaced
+the failed task and prevented dependent analysis from proceeding.
+
+### E. Important current limitation
+
+The Planner now produces `completion_criteria`, and the Orchestrator
+displays them as part of each task. However, **deterministic task-level
+completion validation is not yet implemented**.
+
+A successful tool execution and a returned model response are not
+sufficient proof that every task objective was fulfilled. The next
+milestone is to validate task outputs against their completion criteria
+and required evidence before marking tasks completed.
+
+## 7. Current milestone status
 
   -----------------------------------------------------------------------
-  Priority                Milestone               Intended outcome
-  ----------------------- ----------------------- -----------------------
-  Next                    Planning and task       Convert a user goal
-                          decomposition           into explicit, ordered
-                                                  steps.
+  Capability                          Status
+  ----------------------------------- -----------------------------------
+  OpenAI Responses API connection     Implemented and tested
 
-  Next                    Execution state and     Track pending, running,
-                          step tracking           completed, and failed
-                                                  steps.
+  Dynamic tool registry and dispatch  Implemented and tested
 
-  Next                    Better tool and API     Distinguish validation,
-                          error handling          not-found, rate-limit,
-                                                  timeout, and transient
-                                                  failures.
+  Pydantic tool argument validation   Implemented
 
-  Next                    Comment pagination and  Handle issues with
-                          retrieval limits        large discussions
-                                                  safely.
+  GitHub repository lookup            Implemented
 
-  Next                    Tests                   Add unit and
-                                                  integration tests for
-                                                  tools, validation,
-                                                  executor, and
-                                                  orchestrator.
+  Issue listing, filtering, and       Implemented and tested
+  pagination                          
 
-  Later                   Persistent storage      Save tasks, plans,
-                                                  execution events, and
-                                                  results in a database.
+  Full issue details                  Implemented and tested
 
-  Later                   Human approval and      Require explicit
-                          policy layer            approval before
-                                                  consequential actions.
+  Issue comments                      Implemented and tested
 
-  Later                   Reliability controls    Add bounded tool loops,
-                                                  retries where
-                                                  appropriate, timeouts,
-                                                  and execution limits.
+  Multi-step tool-calling workflow    Demonstrated locally
 
-  Later                   Observability and       Record tool traces and
-                          evaluation              measure task
-                                                  completion,
-                                                  correctness, and
-                                                  failure modes.
+  Planner and structured task         Implemented and tested
+  generation                          
 
-  Later                   API and deployment      Add a service
-                                                  interface,
-                                                  containerization,
-                                                  configuration, and
-                                                  deployment.
+  Task dependency validation          Implemented and tested
+
+  Task lifecycle and progress         Implemented and tested
+  tracking                            
+
+  High-level task orchestration       Demonstrated locally
+
+  Tool failure propagation            Implemented and tested with a
+                                      rate-limit failure
+
+  Dependent-task blocking             Implemented and tested
+
+  Completion criteria generation      Implemented
+
+  Deterministic task completion       Not yet implemented
+  validation                          
+
+  GitHub rate-limit reset/wait/retry  Not yet implemented
+  policy                              
+
+  Persistent run history              Planned
+
+  Evidence store and claim-level      Not yet complete
+  traceability                        
+
+  Human approval and write actions    Post-MVP
   -----------------------------------------------------------------------
 
-## 7. MVP definition and rollout
+## 8. Next engineering milestones
 
-### Proposed MVP
+The next work should improve reliability before adding more integrations
+or write capabilities.
 
-The first MVP should remain **read-only** and focus on one dependable
-use case:
+### Priority 1 --- Task-level completion validation
 
-> Investigate a GitHub repository's issues and produce an evidence-based
-> engineering report.
+A task must not be marked completed merely because the model returned
+text or a tool call did not raise an exception.
 
-A user should be able to ask the agent to: - Inspect repository
-metadata. - Find a specified number of open or closed issues. - Filter
-and paginate issue results. - Retrieve full details for selected
-issues. - Read their comments. - Summarize the reported problem,
-relevant discussion, possible workarounds, and unanswered questions. -
-Link findings back to their GitHub sources.
+Planned validation:
 
-### MVP exit criteria
+-   **Retrieval tasks:** verify the requested number of records,
+    required fields, ordering, and source identifiers.
+-   **Analysis tasks:** verify that the analysis accounts for the
+    retrieved records and supports claims with issue references.
+-   **Synthesis tasks:** verify that the report is based on the
+    completed analysis and distinguishes recurring themes from outliers.
+-   Store validation outcomes and reasons alongside task results.
 
-Before calling it ready for an external rollout, the project should
-have:
+Use deterministic Python checks for measurable requirements and
+model-assisted evaluation only for semantic requirements.
 
--   Reliable argument validation and clear error messages.
--   A bounded execution loop so the agent cannot call tools
-    indefinitely.
--   API rate-limit awareness and safe handling of transient failures.
--   Pagination and result limits for both issues and comments.
--   Tests covering successful calls, invalid arguments, missing
-    repositories/issues, timeouts, and empty results.
--   A record of which tools were called and what evidence informed the
-    report.
--   Clear handling of untrusted repository and issue content; content
-    retrieved from GitHub must be treated as data, not instructions.
--   Secrets kept out of source control and logs.
--   A documented local setup and repeatable run instructions.
+### Priority 2 --- GitHub rate-limit handling
 
-### Not in the first MVP
+The agent has demonstrated that it can surface and propagate a
+rate-limit failure. It still needs a deliberate recovery policy:
 
--   Automatically creating, editing, closing, or commenting on GitHub
-    issues.
--   Merging pull requests or changing repository settings.
--   Autonomous code changes.
--   Unreviewed actions on behalf of a user.
+-   Inspect HTTP 403 rate-limit responses.
+-   Read GitHub's `X-RateLimit-Reset` and related rate-limit headers.
+-   Distinguish primary rate limits from other forbidden responses.
+-   Decide whether to wait, retry within a bounded policy, or stop.
+-   Report the retry time or reason the workflow cannot continue.
 
-Write-capable actions should come later behind explicit human approval
-and a policy layer.
+### Priority 3 --- Stronger evidence traceability
 
-## 8. Setup and local execution
+-   Preserve issue numbers, titles, URLs, and retrieval timestamps.
+-   Keep retrieved source material associated with the task that used
+    it.
+-   Require report findings to reference supporting issues.
+-   Clearly identify missing data and retrieval limitations.
+
+### Priority 4 --- Reliability and tests
+
+-   Add bounded task counts and model/tool-call iterations.
+-   Add unit tests for plan validation and Task Manager transitions.
+-   Test unknown tools, invalid arguments, API errors, timeouts, empty
+    results, pagination, and pull-request filtering.
+-   Test successful workflows and partial failures.
+-   Test that a failed prerequisite blocks dependent tasks.
+-   Add report-grounding checks.
+
+### Later milestones
+
+-   Persistent storage and resumable run history.
+-   Cancellation and explicit retry policies.
+-   More GitHub research capabilities and additional source
+    integrations.
+-   Human approval gates and write-capable tools.
+-   Hosted API, background workers, authentication, and deployment.
+
+## 9. MVP definition
+
+The first MVP remains a **read-only GitHub engineering research agent**.
+
+A user should be able to ask it to:
+
+-   Inspect a public GitHub repository.
+-   Retrieve a specified number of open, closed, or all issues within
+    supported limits.
+-   Retrieve issue details, labels, authors, timestamps, and comments.
+-   Investigate multiple issues as one coordinated workflow.
+-   Identify recurring themes and compare reported symptoms.
+-   Produce a concise report with issue numbers, direct source links,
+    and limitations.
+-   Show task progress and report failed or blocked work accurately.
+
+### MVP exclusions
+
+-   Creating, editing, closing, or commenting on GitHub issues.
+-   Creating branches, commits, or pull requests.
+-   Autonomous code changes, test execution, or deployment.
+-   Unreviewed consequential actions.
+-   Unbounded agent loops or uncontrolled parallel execution.
+
+Write-capable actions should remain outside the MVP until permissions,
+explicit human approval, audit trails, and recovery controls are
+designed.
+
+## 10. Setup and local execution
 
 ### Requirements
 
--   Python (use a supported version compatible with the installed
-    dependencies).
+-   Python compatible with the installed dependencies.
 -   An OpenAI API key.
 -   Internet access for GitHub API requests.
 
@@ -309,7 +448,7 @@ and a policy layer.
 
 ``` bash
 git clone <your-repository-url>
-cd engineering-agent
+cd Engineering-Agent
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -323,7 +462,7 @@ Create a `.env` file in the project root:
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-Do not commit `.env`. Ensure `.gitignore` contains:
+Do not commit `.env`. Ensure `.gitignore` includes:
 
 ``` gitignore
 .env
@@ -335,13 +474,21 @@ __pycache__/
 Run the agent from the project root:
 
 ``` bash
-python3 main.py
+python3 -m agent.orchestrator
 ```
 
-The current command-line entry point prompts for an investigation
-request.
+Other useful module checks:
 
-## 9. Example prompts
+``` bash
+python3 -m agent.planner
+python3 -m agent.task_manager
+python3 -m tools.github
+```
+
+The exact command available for an individual module depends on its
+current `__main__` test block.
+
+## 11. Example investigation requests
 
 ``` text
 Get information about openai/openai-python.
@@ -359,24 +506,65 @@ Find 5 open issues from facebook/react and give me the details of the first issu
 Investigate issue 38183 in facebook/react. Retrieve its full details and read the comments. Explain the reported problem and any solutions suggested in the discussion.
 ```
 
-## 10. Engineering principles
+``` text
+Investigate the five most recent open issues in facebook/react, identify recurring problems, and summarize them.
+```
 
--   **Separation of concerns:** API clients, tool definitions,
-    validation, execution, and orchestration have distinct
+## 12. Engineering principles
+
+-   **Separation of concerns:** planning, task state, orchestration,
+    tool definitions, validation, and API integration have distinct
     responsibilities.
--   **Read-only first:** Build reliable research capabilities before
+-   **Tool-independent planning:** the Planner describes work and
+    dependencies without duplicating the tool registry.
+-   **Two levels of coordination:** the high-level Orchestrator manages
+    tasks; the reusable tool loop manages model/tool interactions.
+-   **Read-only first:** build dependable research capabilities before
     adding write actions.
--   **Validate at boundaries:** Treat model-generated arguments as
-    untrusted input and validate them before execution.
--   **Bound execution:** Tool loops and API requests need explicit
-    limits.
--   **Evidence-based reporting:** Findings should be traceable to
-    repository, issue, and comment sources.
--   **Human control:** Consequential actions require approval.
--   **Incremental architecture:** Add components when the project needs
-    them, and test each milestone before expanding.
+-   **Validate at boundaries:** model-generated tool arguments and task
+    outputs must be checked before they are trusted.
+-   **Failure visibility:** errors, blocked tasks, and partial
+    completion must be explicit.
+-   **Evidence before conclusions:** report claims should be traceable
+    to GitHub sources.
+-   **Bound execution:** task counts, tool iterations, API requests, and
+    retries need explicit limits.
+-   **Incremental architecture:** introduce components when needed and
+    test each milestone before expanding.
 
-## 11. References
+## 13. Product architecture alignment
+
+The Product Architecture & MVP Blueprint defines the north star as
+turning an engineering objective into a structured, evidence-backed
+workflow: understand the request, plan the work, gather information
+through approved capabilities, analyze evidence, and deliver an
+auditable outcome.
+
+The current implementation has established the foundation for these
+blueprint capabilities:
+
+-   Request intake through a local command-line interface.
+-   Planning and task dependency generation.
+-   Task management and sequential orchestration.
+-   Registered GitHub tool capabilities with schema validation.
+-   GitHub issue and comment retrieval.
+-   Initial failure visibility and blocked-task handling.
+-   Initial analysis and report generation.
+
+The following blueprint requirements remain important work rather than
+completed features:
+
+-   Deterministic completion validation.
+-   A complete evidence store and claim-level source traceability.
+-   Bounded runtime budgets and robust rate-limit recovery.
+-   Persistent run/task history and resumability.
+-   Comprehensive automated tests and security evaluation.
+-   Hosted API, worker, and user-facing application layers.
+
+The product blueprint is a target architecture, not a statement that all
+listed capabilities have already been implemented.
+
+## 14. References
 
 -   [GitHub REST API:
     Issues](https://docs.github.com/en/rest/issues/issues)
@@ -384,10 +572,14 @@ Investigate issue 38183 in facebook/react. Retrieve its full details and read th
     comments](https://docs.github.com/en/rest/issues/comments)
 -   [GitHub REST API:
     Pagination](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api)
+-   [GitHub REST API: Rate
+    limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)
 -   [OpenAI API documentation](https://platform.openai.com/docs)
 
 ------------------------------------------------------------------------
 
-**Status note:** This README describes the implementation and tests
-completed so far, alongside the proposed roadmap. Planned capabilities
-are not represented as already implemented.
+**Status note:** This README distinguishes capabilities implemented and
+tested in the current local prototype from planned product architecture.
+Successful sample runs do not establish production reliability;
+task-level completion validation, robust rate-limit recovery,
+comprehensive tests, and full evidence traceability remain outstanding.

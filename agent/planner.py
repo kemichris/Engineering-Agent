@@ -39,9 +39,16 @@ def create_plan(user_request: str) -> Plan:
                     '14. Do not select tools or assign tool names.\n'
                     '15. Do not assume that information from previous tasks '
                     'has already been retrieved.\n\n'
+                    '16. Define clear completion criteria for every task.\n'
+                    '17. Completion criteria must describe observable outcomes '
+                    'that can be checked before a task is marked completed.\n'
+                    '18. Make completion criteria specific to the task type.\n'
+                    '19. Retrieval tasks must specify the expected data or evidence.\n'
+                    '20. Analysis tasks must specify the expected analysis output.\n'
+                    '21. Synthesis tasks must specify the expected final deliverable.\n'
 
                     'Return a complete execution plan containing task IDs, '
-                    'descriptions and dependencies.'
+                    'descriptions, completion criteria and dependencies.'
                 )
             },
             {
@@ -64,6 +71,7 @@ def create_plan(user_request: str) -> Plan:
             Task(
                 task_id=task.task_id,
                 description=task.description,
+                completion_criteria=task.completion_criteria,
                 depends_on=task.depends_on
             )
             for task in plan_draft.tasks

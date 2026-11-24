@@ -1,3 +1,4 @@
+
 from openai_client import client
 from agent.tool_registry import tools
 from agent.tool_executor import execute_tool
@@ -29,6 +30,8 @@ def run_agent(user_input):
         print(f'\nExecuting Task {next_task.task_id}')
         print(next_task.description)
 
+        print(f'Completion criteria: {next_task.completion_criteria}')
+
         # Mark the task as currently executing.
         task_manager.mark_processing(next_task.task_id)
 
@@ -39,14 +42,18 @@ def run_agent(user_input):
             dependency_task = task_manager.get_task(dependency_id)
 
             dependency_results.append(
-                f'Task {dependency_id} result:\n'
-                f'{dependency_task.result}'
+                f'Task {dependency_id} response:\n'
+                f'{dependency_task.result["response"]}\n\n'
+                f'Task {dependency_id} execution evidence:\n'
+                f'{dependency_task.result["execution_results"]}'
             )
 
         # Prepare the execution context.
         task_input = (
             f'Original user request:\n{user_input}\n\n'
             f'Current task:\n{next_task.description}\n\n'
+            f'Expected completion criteria:\n'
+            f'{next_task.completion_criteria}\n\n'
             f'Previous task results:\n'
             f'{"\n\n".join(dependency_results)}\n\n'
             'Complete only the current task. '
@@ -91,10 +98,16 @@ def run_agent(user_input):
 
                 continue
 
-            # Save the result and mark the task as completed.
+            # Preserve the complete task execution record.
+            task_result = {
+                'response': result,
+                'execution_results': execution_results
+            }
+
+            # Save the complete result and mark the task as completed.
             task_manager.mark_completed(
                 next_task.task_id,
-                result
+                task_result
             )
 
             final_result = result
@@ -176,6 +189,7 @@ def run_tool_loop(user_input):
             previous_response_id=response.id,
             input=tool_outputs
         )
+
 
 if __name__ == '__main__':
 
