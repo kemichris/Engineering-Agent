@@ -217,26 +217,3 @@ class TaskManager:
                 for task in self.plan.tasks
             )
         }
-
-
-if __name__ == '__main__':
-    plan = Plan(
-        tasks=[
-            Task(task_id=1, description='Fetch GitHub issues'),
-            Task(task_id=2, description='Review issues', depends_on=[1]),
-            Task(task_id=3, description='Summarize findings', depends_on=[2])
-        ]
-    )
-
-    manager = TaskManager(plan)
-
-    # Check the first eligible task.
-    task = manager.get_next_task()
-    print('Next task:', task.task_id)
-
-    # Mark Task 1 as completed.
-    manager.mark_completed(1, 'Five issues retrieved.')
-
-    # Check the next eligible task.
-    task = manager.get_next_task()
-    print('Next task:', task.task_id)
