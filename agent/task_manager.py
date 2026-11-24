@@ -16,6 +16,7 @@ class Task(BaseModel):
         'processing',
         'completed',
         'failed'
+        'blocked'
     ] = 'pending'
 
     # Any allows different types of results, such as strings, lists or dictionaries.
@@ -117,103 +118,190 @@ class Plan(BaseModel):
 
 
 # Manages task execution state and progress for a Plan.
+
 class TaskManager:
 
     def __init__(self, plan: Plan):
-        # Store the execution plan that this manager will control.
         self.plan = plan
 
-    # Finds and returns the next pending task whose dependencies are completed.
-    # Returns None when no task is currently eligible for execution.
+    # Finds the next pending task whose dependencies are completed.
     def get_next_task(self):
 
-        # Examine tasks in their original plan order.
+        # First, identify tasks that can no longer execute.
+        self.update_blocked_tasks()
+
         for task in self.plan.tasks:
 
-            # Skip tasks that are not waiting to be executed.
             if task.status != 'pending':
                 continue
 
-            # Check whether every dependency of this task is completed.
             dependencies_completed = all(
-                next(
-                    dependency_task
-                    for dependency_task in self.plan.tasks
-                    if dependency_task.task_id == dependency_id
-                ).status == 'completed'
+                self.get_task(dependency_id).status == 'completed'
                 for dependency_id in task.depends_on
             )
 
-            # Return the task if all its dependencies are satisfied.
             if dependencies_completed:
                 return task
 
         return None
 
-    # Changes a task's status to processing when execution begins.
+    # Marks a task as processing.
     def mark_processing(self, task_id: int):
         task = self.get_task(task_id)
+
+        if task.status != 'pending':
+            raise ValueError(
+                f'Task {task_id} cannot enter processing '
+                f'from status {task.status}.'
+            )
+
         task.status = 'processing'
 
-    # Marks a task as completed and stores its execution result.
+    # Marks a task as completed and stores its result.
     def mark_completed(self, task_id: int, result: Any):
         task = self.get_task(task_id)
 
+        if task.status != 'processing':
+            raise ValueError(
+                f'Task {task_id} cannot be completed '
+                f'from status {task.status}.'
+            )
+
         task.status = 'completed'
         task.result = result
-
-        # Clear any previous error associated with the task.
         task.error = None
 
-    # Marks a task as failed and stores the error message.
+    # Marks a task as failed and stores its error.
     def mark_failed(self, task_id: int, error: str):
         task = self.get_task(task_id)
+
+        if task.status != 'processing':
+            raise ValueError(
+                f'Task {task_id} cannot fail '
+                f'from status {task.status}.'
+            )
 
         task.status = 'failed'
         task.error = error
 
-    # Finds and returns a task using its unique task ID.
+        # Update dependent tasks after a failure.
+        self.update_blocked_tasks()
+
+    # Marks a task as blocked.
+    def mark_blocked(self, task_id: int, reason: str):
+        task = self.get_task(task_id)
+
+        if task.status != 'pending':
+            return
+
+        task.status = 'blocked'
+        task.error = reason
+
+    # Automatically blocks tasks whose dependencies failed or were blocked.
+    def update_blocked_tasks(self):
+
+        changed = True
+
+        while changed:
+            changed = False
+
+            for task in self.plan.tasks:
+
+                if task.status != 'pending':
+                    continue
+
+                for dependency_id in task.depends_on:
+                    dependency_task = self.get_task(dependency_id)
+
+                    if dependency_task.status in ('failed', 'blocked'):
+                        self.mark_blocked(
+                            task.task_id,
+                            f'Dependency Task {dependency_id} '
+                            f'{dependency_task.status}.'
+                        )
+
+                        changed = True
+                        break
+
+    # Finds a task by its ID.
     def get_task(self, task_id: int):
         for task in self.plan.tasks:
             if task.task_id == task_id:
                 return task
 
-        # Raise an error if the requested task does not exist.
         raise ValueError(f'Task {task_id} not found.')
 
-    # Checks whether every task in the plan has been completed.
+    # Checks whether execution has finished.
     def is_complete(self):
+        return all(
+            task.status in ('completed', 'failed', 'blocked')
+            for task in self.plan.tasks
+        )
+
+    # Checks whether every task completed successfully.
+    def is_successful(self):
         return all(
             task.status == 'completed'
             for task in self.plan.tasks
         )
 
-    # Returns a summary of task execution progress.
+    # Returns execution progress.
     def get_progress(self):
         return {
             'total': len(self.plan.tasks),
-
-            # Count tasks waiting to be executed.
             'pending': sum(
                 task.status == 'pending'
                 for task in self.plan.tasks
             ),
-
-            # Count tasks currently being executed.
             'processing': sum(
                 task.status == 'processing'
                 for task in self.plan.tasks
             ),
-
-            # Count successfully completed tasks.
             'completed': sum(
                 task.status == 'completed'
                 for task in self.plan.tasks
             ),
-
-            # Count tasks that failed during execution.
             'failed': sum(
                 task.status == 'failed'
                 for task in self.plan.tasks
+            ),
+            'blocked': sum(
+                task.status == 'blocked'
+                for task in self.plan.tasks
             )
         }
+
+
+if __name__ == '__main__':
+
+    plan = Plan(
+        tasks=[
+            Task(task_id=1, description='Retrieve GitHub issues'),
+            Task(
+                task_id=2,
+                description='Analyse GitHub issues',
+                depends_on=[1]
+            ),
+            Task(
+                task_id=3,
+                description='Summarise findings',
+                depends_on=[2]
+            )
+        ]
+    )
+
+    manager = TaskManager(plan)
+
+    # Test 1: Start and fail Task 1.
+    manager.mark_processing(1)
+    manager.mark_failed(1, 'GitHub API rate limit exceeded.')
+
+    # Display task statuses.
+    for task in manager.plan.tasks:
+        print(f'Task {task.task_id}: {task.status}')
+
+    print('\nExecution progress:')
+    print(manager.get_progress())
+
+    print('\nExecution finished:', manager.is_complete())
+    print('Execution successful:', manager.is_successful())
