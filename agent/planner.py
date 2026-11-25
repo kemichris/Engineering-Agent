@@ -36,32 +36,71 @@ def create_plan(user_request: str) -> Plan:
                     'they can potentially execute concurrently.\n'
                     '12. Do not create unnecessary or redundant tasks.\n'
                     '13. Do not execute tasks or retrieve external information.\n'
-                    '14. Do not select tools or assign tool names.\n'
-                    '15. Do not assume that information from previous tasks '
+                    '14. Do not assume that information from previous tasks '
                     'has already been retrieved.\n\n'
 
                     'COMPLETION CRITERIA:\n'
-                    '16. Define clear completion criteria for every task.\n'
-                    '17. Completion criteria must describe observable outcomes '
+                    '15. Define clear completion criteria for every task.\n'
+                    '16. Completion criteria must describe observable outcomes '
                     'that can be checked before a task is marked completed.\n'
-                    '18. Make completion criteria specific to the task type.\n'
-                    '19. Retrieval tasks must specify the expected data or evidence.\n'
-                    '20. Analysis tasks must specify the expected analysis output.\n'
-                    '21. Synthesis tasks must specify the expected final deliverable.\n\n'
+                    '17. Make completion criteria specific to the task type.\n'
+                    '18. Retrieval tasks must specify the expected data or evidence.\n'
+                    '19. Analysis tasks must specify the expected analysis output.\n'
+                    '20. Synthesis tasks must specify the expected final deliverable.\n\n'
 
                     'TASK CLASSIFICATION:\n'
                     'Every task must be classified using exactly one of '
                     'these types: retrieval, analysis, or synthesis.\n'
-                    '22. Use retrieval for tasks that collect information from '
+                    '21. Use retrieval for tasks that collect information from '
                     'external sources or tools.\n'
-                    '23. Use analysis for tasks that examine retrieved information '
+                    '22. Use analysis for tasks that examine retrieved information '
                     'and identify patterns or findings.\n'
-                    '24. Use synthesis for tasks that combine findings into '
+                    '23. Use synthesis for tasks that combine findings into '
                     'a final report or recommendation.\n\n'
+
+                    'STRUCTURED VALIDATION REQUIREMENTS:\n'
+                    '24. Every retrieval task must define relevant validation requirements.\n'
+                    '25. Specify expected_tool when a particular tool is required.\n'
+                    '26. Specify expected_count when a specific number of records '
+                    'is requested.\n'
+                    '27. Specify required_fields when each retrieved record must '
+                    'contain particular fields.\n'
+                    '28. Only specify requirements relevant to the task.\n'
+                    '29. Analysis and synthesis tasks should leave retrieval-specific '
+                    'requirements empty.\n'
+                    '30. Never invent tool names or output fields.\n\n'
+
+                    'AVAILABLE GITHUB TOOLS:\n'
+                    '- get_repository_info\n'
+                    '- get_repository_issues\n'
+                    '- get_issue_details\n'
+                    '- get_issue_comments\n\n'
+
+                    'AVAILABLE TOOL OUTPUT SCHEMAS:\n'
+                    'get_repository_issues returns a list of issue records '
+                    'containing these exact fields:\n'
+                    '- issue_number\n'
+                    '- title\n'
+                    '- state\n'
+                    '- author\n'
+                    '- url\n'
+                    '- creation_date\n'
+                    '- comment_count\n'
+                    '- body\n'
+                    '- labels\n\n'
+
+                    'When defining expected_tool, use the exact registered tool name.\n'
+                    'When defining required_fields, use the exact field names '
+                    'from the corresponding tool output.\n'
+                    'Do not confuse API field names with the Python output '
+                    'field names listed above.\n\n'
+
+                    'The Planner may identify an expected tool for validation, '
+                    'but must not execute tools or perform tool dispatch.\n\n'
 
                     'Return a complete execution plan containing task IDs, '
                     'task types, descriptions, completion criteria, '
-                    'and dependencies.'
+                    'dependencies, and structured validation requirements.'
                 )
             },
             {
@@ -86,6 +125,7 @@ def create_plan(user_request: str) -> Plan:
                 task_type=task.task_type,
                 description=task.description,
                 completion_criteria=task.completion_criteria,
+                validation_requirements=task.validation_requirements,
                 depends_on=task.depends_on
             )
             for task in plan_draft.tasks

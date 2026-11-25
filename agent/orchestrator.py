@@ -4,6 +4,7 @@ from agent.tool_registry import tools
 from agent.tool_executor import execute_tool
 from agent.planner import create_plan
 from agent.task_manager import TaskManager
+from agent.task_validator import validate_retrieval
 
 
 # Coordinates the complete agent workflow.
@@ -98,10 +99,53 @@ def run_agent(user_input):
 
                 continue
 
+            # Validate retrieval tasks before marking them completed.
+            validation = None
+
+            if next_task.task_type == 'retrieval':
+
+                print(f'Validating Task {next_task.task_id}...')
+
+                validation = validate_retrieval(
+                    task=next_task,
+                    execution_results=execution_results
+                )
+
+                # Display validation results.
+                print('\nValidation checks:')
+                for check in validation['checks']:
+                    print(f'  [PASS] {check}')
+
+                if not validation['valid']:
+
+                    print('\nValidation errors:')
+
+                    for error_message in validation['errors']:
+                        print(f'  [FAIL] {error_message}')
+
+                    error_summary = '; '.join(
+                        validation['errors']
+                    )
+
+                    # Invalid evidence means the task has not completed.
+                    task_manager.mark_failed(
+                        next_task.task_id,
+                        f'Validation failed: {error_summary}'
+                    )
+
+                    print(
+                        f'\nTask {next_task.task_id} failed validation.'
+                    )
+
+                    continue
+
+                print('\nRetrieval validation passed.')
+
             # Preserve the complete task execution record.
             task_result = {
                 'response': result,
-                'execution_results': execution_results
+                'execution_results': execution_results,
+                'validation': validation
             }
 
             # Save the complete result and mark the task as completed.
