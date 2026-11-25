@@ -39,16 +39,29 @@ def create_plan(user_request: str) -> Plan:
                     '14. Do not select tools or assign tool names.\n'
                     '15. Do not assume that information from previous tasks '
                     'has already been retrieved.\n\n'
+
+                    'COMPLETION CRITERIA:\n'
                     '16. Define clear completion criteria for every task.\n'
                     '17. Completion criteria must describe observable outcomes '
                     'that can be checked before a task is marked completed.\n'
                     '18. Make completion criteria specific to the task type.\n'
                     '19. Retrieval tasks must specify the expected data or evidence.\n'
                     '20. Analysis tasks must specify the expected analysis output.\n'
-                    '21. Synthesis tasks must specify the expected final deliverable.\n'
+                    '21. Synthesis tasks must specify the expected final deliverable.\n\n'
+
+                    'TASK CLASSIFICATION:\n'
+                    'Every task must be classified using exactly one of '
+                    'these types: retrieval, analysis, or synthesis.\n'
+                    '22. Use retrieval for tasks that collect information from '
+                    'external sources or tools.\n'
+                    '23. Use analysis for tasks that examine retrieved information '
+                    'and identify patterns or findings.\n'
+                    '24. Use synthesis for tasks that combine findings into '
+                    'a final report or recommendation.\n\n'
 
                     'Return a complete execution plan containing task IDs, '
-                    'descriptions, completion criteria and dependencies.'
+                    'task types, descriptions, completion criteria, '
+                    'and dependencies.'
                 )
             },
             {
@@ -70,6 +83,7 @@ def create_plan(user_request: str) -> Plan:
         tasks=[
             Task(
                 task_id=task.task_id,
+                task_type=task.task_type,
                 description=task.description,
                 completion_criteria=task.completion_criteria,
                 depends_on=task.depends_on
