@@ -5,6 +5,8 @@ from agent.tool_executor import execute_tool
 from agent.planner import create_plan
 from agent.task_manager import TaskManager
 from agent.task_validator import validate_retrieval
+from agent.task_evaluator import evaluate_task, is_evaluation_acceptable
+
 
 
 # Coordinates the complete agent workflow.
@@ -21,26 +23,30 @@ def run_agent(user_input):
     # Step 3: Execute tasks until the plan is complete.
     while not task_manager.is_complete():
 
-        # Get the next task whose dependencies are completed.
         next_task = task_manager.get_next_task()
 
-        # Stop if no task is currently eligible for execution.
         if next_task is None:
             break
 
         print(f'\nExecuting Task {next_task.task_id}')
         print(next_task.description)
-
         print(f'Completion criteria: {next_task.completion_criteria}')
 
-        # Mark the task as currently executing.
         task_manager.mark_processing(next_task.task_id)
 
-        # Retrieve the results of the task's dependencies.
+        # Retrieve dependency results and their original evidence.
         dependency_results = []
+        dependency_evidence = []
 
         for dependency_id in next_task.depends_on:
+
             dependency_task = task_manager.get_task(dependency_id)
+
+            dependency_evidence.append(dependency_task.result)
+
+            dependency_evidence.extend(
+                dependency_task.result.get('dependency_evidence', [])
+            )
 
             dependency_results.append(
                 f'Task {dependency_id} response:\n'
@@ -63,13 +69,13 @@ def run_agent(user_input):
         )
 
         try:
-            # Execute the current task using the existing tool loop.
+            # Execute the current task.
             execution = run_tool_loop(task_input)
 
             result = execution['response']
             execution_results = execution['execution_results']
 
-            # Check whether any tool execution failed.
+            # Check for failed tool executions.
             failed_tools = [
                 tool_result
                 for tool_result in execution_results
@@ -86,7 +92,6 @@ def run_agent(user_input):
 
                 error_summary = '; '.join(error_messages)
 
-                # Mark the task as failed.
                 task_manager.mark_failed(
                     next_task.task_id,
                     error_summary
@@ -99,20 +104,22 @@ def run_agent(user_input):
 
                 continue
 
-            # Validate retrieval tasks before marking them completed.
+            # Initialize validation and evaluation records.
             validation = None
+            evaluation = None
 
+            # Deterministic validation for retrieval tasks.
             if next_task.task_type == 'retrieval':
 
-                print(f'Validating Task {next_task.task_id}...')
+                print(f'\nValidating Task {next_task.task_id}...')
 
                 validation = validate_retrieval(
                     task=next_task,
                     execution_results=execution_results
                 )
 
-                # Display validation results.
                 print('\nValidation checks:')
+
                 for check in validation['checks']:
                     print(f'  [PASS] {check}')
 
@@ -127,7 +134,6 @@ def run_agent(user_input):
                         validation['errors']
                     )
 
-                    # Invalid evidence means the task has not completed.
                     task_manager.mark_failed(
                         next_task.task_id,
                         f'Validation failed: {error_summary}'
@@ -141,14 +147,70 @@ def run_agent(user_input):
 
                 print('\nRetrieval validation passed.')
 
+            # LLM evaluation for analysis and synthesis tasks.
+            elif next_task.task_type in ['analysis', 'synthesis']:
+
+                print(f'\nEvaluating Task {next_task.task_id}...')
+
+                evaluation = evaluate_task(
+                    task=next_task,
+                    request=user_input,
+                    evidence=dependency_evidence,
+                    output=result
+                )
+
+                print('\nEvaluation result:')
+                print(f'Score: {evaluation.score}/100')
+                print(f'Reason: {evaluation.reason}')
+
+                if evaluation.missing_requirements:
+
+                    print('\nMissing requirements:')
+
+                    for item in evaluation.missing_requirements:
+                        print(f'  - {item}')
+
+                if evaluation.unsupported_claims:
+
+                    print('\nUnsupported claims:')
+
+                    for item in evaluation.unsupported_claims:
+                        print(f'  - {item}')
+
+                if not is_evaluation_acceptable(evaluation):
+
+                    error_summary = (
+                        f'Evaluation failed. '
+                        f'Score: {evaluation.score}/100. '
+                        f'Reason: {evaluation.reason}'
+                    )
+
+                    task_manager.mark_failed(
+                        next_task.task_id,
+                        error_summary
+                    )
+
+                    print(
+                        f'\nTask {next_task.task_id} failed evaluation.'
+                    )
+
+                    continue
+
+                print('\nLLM evaluation passed.')
+
             # Preserve the complete task execution record.
             task_result = {
                 'response': result,
                 'execution_results': execution_results,
-                'validation': validation
+                'validation': validation,
+                'evaluation': (
+                    evaluation.model_dump()
+                    if evaluation else None
+                ),
+                'dependency_evidence': dependency_evidence
             }
 
-            # Save the complete result and mark the task as completed.
+            # Save the result and mark the task completed.
             task_manager.mark_completed(
                 next_task.task_id,
                 task_result
@@ -160,7 +222,6 @@ def run_agent(user_input):
 
         except Exception as error:
 
-            # Record unexpected execution failures.
             task_manager.mark_failed(
                 next_task.task_id,
                 str(error)
@@ -168,7 +229,7 @@ def run_agent(user_input):
 
             print(f'Task {next_task.task_id} failed: {error}')
 
-    # Step 4: Report final execution progress.
+    # Step 4: Report execution progress.
     progress = task_manager.get_progress()
 
     print('\nExecution progress:')
